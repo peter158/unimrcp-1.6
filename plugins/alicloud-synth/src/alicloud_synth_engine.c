@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* 
+/*
  * Mandatory rules concerning plugin implementation.
  * 1. Each plugin MUST implement a plugin/engine creator function
  *    with the exact signature and name (the main entry point)
@@ -41,15 +41,13 @@ typedef struct alicloud_synth_msg_t alicloud_synth_msg_t;
 static apt_bool_t alicloud_synth_engine_destroy(mrcp_engine_t *engine);
 static apt_bool_t alicloud_synth_engine_open(mrcp_engine_t *engine);
 static apt_bool_t alicloud_synth_engine_close(mrcp_engine_t *engine);
-static mrcp_engine_channel_t* alicloud_synth_engine_channel_create(mrcp_engine_t *engine, apr_pool_t *pool);
+static mrcp_engine_channel_t *alicloud_synth_engine_channel_create(mrcp_engine_t *engine, apr_pool_t *pool);
 
 static const struct mrcp_engine_method_vtable_t engine_vtable = {
 	alicloud_synth_engine_destroy,
 	alicloud_synth_engine_open,
 	alicloud_synth_engine_close,
-	alicloud_synth_engine_channel_create
-};
-
+	alicloud_synth_engine_channel_create};
 
 /** Declaration of synthesizer channel methods */
 static apt_bool_t alicloud_synth_channel_destroy(mrcp_engine_channel_t *channel);
@@ -61,8 +59,7 @@ static const struct mrcp_engine_channel_method_vtable_t channel_vtable = {
 	alicloud_synth_channel_destroy,
 	alicloud_synth_channel_open,
 	alicloud_synth_channel_close,
-	alicloud_synth_channel_request_process
-};
+	alicloud_synth_channel_request_process};
 
 /** Declaration of synthesizer audio stream methods */
 static apt_bool_t alicloud_synth_stream_destroy(mpf_audio_stream_t *stream);
@@ -78,46 +75,48 @@ static const mpf_audio_stream_vtable_t audio_stream_vtable = {
 	NULL,
 	NULL,
 	NULL,
-	NULL
-};
+	NULL};
 
 /** Declaration of alicloud synthesizer engine */
-struct alicloud_synth_engine_t {
-	apt_consumer_task_t    *task;
+struct alicloud_synth_engine_t
+{
+	apt_consumer_task_t *task;
 };
 
 /** Declaration of alicloud synthesizer channel */
-struct alicloud_synth_channel_t {
+struct alicloud_synth_channel_t
+{
 	/** Back pointer to engine */
-	alicloud_synth_engine_t   *alicloud_engine;
+	alicloud_synth_engine_t *alicloud_engine;
 	/** Engine channel base */
 	mrcp_engine_channel_t *channel;
 
 	/** Active (in-progress) speak request */
-	mrcp_message_t        *speak_request;
+	mrcp_message_t *speak_request;
 	/** Pending stop response */
-	mrcp_message_t        *stop_response;
+	mrcp_message_t *stop_response;
 	/** Estimated time to complete */
-	apr_size_t             time_to_complete;
+	apr_size_t time_to_complete;
 	/** Is paused */
-	apt_bool_t             paused;
+	apt_bool_t paused;
 	/** Speech source (used instead of actual synthesis) */
-	FILE                  *audio_file;
+	FILE *audio_file;
 };
 
-typedef enum {
+typedef enum
+{
 	ALICLOUD_SYNTH_MSG_OPEN_CHANNEL,
 	ALICLOUD_SYNTH_MSG_CLOSE_CHANNEL,
 	ALICLOUD_SYNTH_MSG_REQUEST_PROCESS
 } alicloud_synth_msg_type_e;
 
 /** Declaration of alicloud synthesizer task message */
-struct alicloud_synth_msg_t {
-	alicloud_synth_msg_type_e  type;
-	mrcp_engine_channel_t *channel; 
-	mrcp_message_t        *request;
+struct alicloud_synth_msg_t
+{
+	alicloud_synth_msg_type_e type;
+	mrcp_engine_channel_t *channel;
+	mrcp_message_t *request;
 };
-
 
 static apt_bool_t alicloud_synth_msg_signal(alicloud_synth_msg_type_e type, mrcp_engine_channel_t *channel, mrcp_message_t *request);
 static apt_bool_t alicloud_synth_msg_process(apt_task_t *task, apt_task_msg_t *msg);
@@ -130,50 +129,54 @@ MRCP_PLUGIN_VERSION_DECLARE
  * Enable/add the corresponding entry in logger.xml to set a cutsom log source priority.
  *    <source name="SYNTH-PLUGIN" priority="DEBUG" masking="NONE"/>
  */
-MRCP_PLUGIN_LOG_SOURCE_IMPLEMENT(SYNTH_PLUGIN,"SYNTH-PLUGIN")
+MRCP_PLUGIN_LOG_SOURCE_IMPLEMENT(SYNTH_PLUGIN, "SYNTH-PLUGIN")
 
 /** Use custom log source mark */
-#define SYNTH_LOG_MARK   APT_LOG_MARK_DECLARE(SYNTH_PLUGIN)
+#define SYNTH_LOG_MARK APT_LOG_MARK_DECLARE(SYNTH_PLUGIN)
 
 /** Create alicloud synthesizer engine */
-MRCP_PLUGIN_DECLARE(mrcp_engine_t*) mrcp_plugin_create(apr_pool_t *pool)
+MRCP_PLUGIN_DECLARE(mrcp_engine_t *)
+mrcp_plugin_create(apr_pool_t *pool)
 {
 
 	/* create alicloud engine */
-	alicloud_synth_engine_t *alicloud_engine = apr_palloc(pool,sizeof(alicloud_synth_engine_t));
+	alicloud_synth_engine_t *alicloud_engine = apr_palloc(pool, sizeof(alicloud_synth_engine_t));
 	apt_task_t *task;
 	apt_task_vtable_t *vtable;
 	apt_task_msg_pool_t *msg_pool;
 
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth plugin create ...");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth plugin create ...");
 
 	/* create task/thread to run alicloud engine in the context of this task */
-	msg_pool = apt_task_msg_pool_create_dynamic(sizeof(alicloud_synth_msg_t),pool);
-	alicloud_engine->task = apt_consumer_task_create(alicloud_engine,msg_pool,pool);
-	if(!alicloud_engine->task) {
+	msg_pool = apt_task_msg_pool_create_dynamic(sizeof(alicloud_synth_msg_t), pool);
+	alicloud_engine->task = apt_consumer_task_create(alicloud_engine, msg_pool, pool);
+	if (!alicloud_engine->task)
+	{
 		return NULL;
 	}
 	task = apt_consumer_task_base_get(alicloud_engine->task);
-	apt_task_name_set(task,SYNTH_ENGINE_TASK_NAME);
+	apt_task_name_set(task, SYNTH_ENGINE_TASK_NAME);
 	vtable = apt_task_vtable_get(task);
-	if(vtable) {
+	if (vtable)
+	{
 		vtable->process_msg = alicloud_synth_msg_process;
 	}
 
 	/* create engine base */
 	return mrcp_engine_create(
-				MRCP_SYNTHESIZER_RESOURCE, /* MRCP resource identifier */
-				alicloud_engine,               /* object to associate */
-				&engine_vtable,            /* virtual methods table of engine */
-				pool);                     /* pool to allocate memory from */
+		MRCP_SYNTHESIZER_RESOURCE, /* MRCP resource identifier */
+		alicloud_engine,		   /* object to associate */
+		&engine_vtable,			   /* virtual methods table of engine */
+		pool);					   /* pool to allocate memory from */
 }
 
 /** Destroy synthesizer engine */
 static apt_bool_t alicloud_synth_engine_destroy(mrcp_engine_t *engine)
 {
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine destroy.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine destroy.");
 	alicloud_synth_engine_t *alicloud_engine = engine->obj;
-	if(alicloud_engine->task) {
+	if (alicloud_engine->task)
+	{
 		apt_task_t *task = apt_consumer_task_base_get(alicloud_engine->task);
 		apt_task_destroy(task);
 		alicloud_engine->task = NULL;
@@ -184,71 +187,76 @@ static apt_bool_t alicloud_synth_engine_destroy(mrcp_engine_t *engine)
 /** Open synthesizer engine */
 static apt_bool_t alicloud_synth_engine_open(mrcp_engine_t *engine)
 {
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine open.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine open.");
 
-        const mrcp_engine_config_t *config = mrcp_engine_config_get(engine);
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine open ######## max_channel_count : %d", config->max_channel_count);
-        const char *accessKeyId = apr_table_get(config->params, "accessKeyId");
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine open ######## accessKeyId       : %s", accessKeyId);
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine open ######## accessKeySecret   : %s", apr_table_get(config->params, "accessKeySecret"));
+	const mrcp_engine_config_t *config = mrcp_engine_config_get(engine);
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine open ######## max_channel_count : %d", config->max_channel_count);
+	const char *accessKeyId = apr_table_get(config->params, "accessKeyId");
+	const char *accessKeySecret = apr_table_get(config->params, "accessKeySecret");
+	const char *appKey = apr_table_get(config->params, "appKey");
+	apt_log(RECOG_LOG_MARK, APT_PRIO_INFO, "# Alicloud recog engine open ######## accessKeyId       : %s", accessKeyId);
+	apt_log(RECOG_LOG_MARK, APT_PRIO_INFO, "# Alicloud recog engine open ######## accessKeySecret   : %s", accessKeySecret);
+	apt_log(RECOG_LOG_MARK, APT_PRIO_INFO, "# Alicloud recog engine open ######## appKey   : %s", appKey);
 
 	alicloud_synth_engine_t *alicloud_engine = engine->obj;
-	if(alicloud_engine->task) {
+	if (alicloud_engine->task)
+	{
 		apt_task_t *task = apt_consumer_task_base_get(alicloud_engine->task);
 		apt_task_start(task);
 	}
-	return mrcp_engine_open_respond(engine,TRUE);
+	return mrcp_engine_open_respond(engine, TRUE);
 }
 
 /** Close synthesizer engine */
 static apt_bool_t alicloud_synth_engine_close(mrcp_engine_t *engine)
 {
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine close.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine close.");
 	alicloud_synth_engine_t *alicloud_engine = engine->obj;
-	if(alicloud_engine->task) {
+	if (alicloud_engine->task)
+	{
 		apt_task_t *task = apt_consumer_task_base_get(alicloud_engine->task);
-		apt_task_terminate(task,TRUE);
+		apt_task_terminate(task, TRUE);
 	}
 	return mrcp_engine_close_respond(engine);
 }
 
 /** Create alicloud synthesizer channel derived from engine channel base */
-static mrcp_engine_channel_t* alicloud_synth_engine_channel_create(mrcp_engine_t *engine, apr_pool_t *pool)
+static mrcp_engine_channel_t *alicloud_synth_engine_channel_create(mrcp_engine_t *engine, apr_pool_t *pool)
 {
 	mpf_stream_capabilities_t *capabilities;
-	mpf_termination_t *termination; 
+	mpf_termination_t *termination;
 
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine channel create ...");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine channel create ...");
 
 	/* create alicloud synth channel */
-	alicloud_synth_channel_t *synth_channel = apr_palloc(pool,sizeof(alicloud_synth_channel_t));
+	alicloud_synth_channel_t *synth_channel = apr_palloc(pool, sizeof(alicloud_synth_channel_t));
 	synth_channel->alicloud_engine = engine->obj;
 	synth_channel->speak_request = NULL;
 	synth_channel->stop_response = NULL;
 	synth_channel->time_to_complete = 0;
 	synth_channel->paused = FALSE;
 	synth_channel->audio_file = NULL;
-	
+
 	capabilities = mpf_source_stream_capabilities_create(pool);
 	mpf_codec_capabilities_add(
-			&capabilities->codecs,
-			MPF_SAMPLE_RATE_8000 | MPF_SAMPLE_RATE_16000,
-			"LPCM");
+		&capabilities->codecs,
+		MPF_SAMPLE_RATE_8000 | MPF_SAMPLE_RATE_16000,
+		"LPCM");
 
 	/* create media termination */
 	termination = mrcp_engine_audio_termination_create(
-			synth_channel,        /* object to associate */
-			&audio_stream_vtable, /* virtual methods table of audio stream */
-			capabilities,         /* stream capabilities */
-			pool);                /* pool to allocate memory from */
+		synth_channel,		  /* object to associate */
+		&audio_stream_vtable, /* virtual methods table of audio stream */
+		capabilities,		  /* stream capabilities */
+		pool);				  /* pool to allocate memory from */
 
 	/* create engine channel base */
 	synth_channel->channel = mrcp_engine_channel_create(
-			engine,               /* engine */
-			&channel_vtable,      /* virtual methods table of engine channel */
-			synth_channel,        /* object to associate */
-			termination,          /* associated media termination */
-			pool);                /* pool to allocate memory from */
+		engine,			 /* engine */
+		&channel_vtable, /* virtual methods table of engine channel */
+		synth_channel,	 /* object to associate */
+		termination,	 /* associated media termination */
+		pool);			 /* pool to allocate memory from */
 
 	return synth_channel->channel;
 }
@@ -256,7 +264,7 @@ static mrcp_engine_channel_t* alicloud_synth_engine_channel_create(mrcp_engine_t
 /** Destroy engine channel */
 static apt_bool_t alicloud_synth_channel_destroy(mrcp_engine_channel_t *channel)
 {
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine channel destroy.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine channel destroy.");
 	/* nothing to destroy */
 	return TRUE;
 }
@@ -264,22 +272,22 @@ static apt_bool_t alicloud_synth_channel_destroy(mrcp_engine_channel_t *channel)
 /** Open engine channel (asynchronous response MUST be sent)*/
 static apt_bool_t alicloud_synth_channel_open(mrcp_engine_channel_t *channel)
 {
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine channel open ...");
-	return alicloud_synth_msg_signal(ALICLOUD_SYNTH_MSG_OPEN_CHANNEL,channel,NULL);
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine channel open ...");
+	return alicloud_synth_msg_signal(ALICLOUD_SYNTH_MSG_OPEN_CHANNEL, channel, NULL);
 }
 
 /** Close engine channel (asynchronous response MUST be sent)*/
 static apt_bool_t alicloud_synth_channel_close(mrcp_engine_channel_t *channel)
 {
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine channel close ...");
-	return alicloud_synth_msg_signal(ALICLOUD_SYNTH_MSG_CLOSE_CHANNEL,channel,NULL);
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine channel close ...");
+	return alicloud_synth_msg_signal(ALICLOUD_SYNTH_MSG_CLOSE_CHANNEL, channel, NULL);
 }
 
 /** Process MRCP channel request (asynchronous response MUST be sent)*/
 static apt_bool_t alicloud_synth_channel_request_process(mrcp_engine_channel_t *channel, mrcp_message_t *request)
 {
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine channel request process ...");
-	return alicloud_synth_msg_signal(ALICLOUD_SYNTH_MSG_REQUEST_PROCESS,channel,request);
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine channel request process ...");
+	return alicloud_synth_msg_signal(ALICLOUD_SYNTH_MSG_REQUEST_PROCESS, channel, request);
 }
 
 /** Process SPEAK request */
@@ -287,37 +295,44 @@ static apt_bool_t alicloud_synth_channel_speak(mrcp_engine_channel_t *channel, m
 {
 	char *file_path = NULL;
 
-	apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth engine channel speak [%s]",request->body);
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth engine channel speak [%s]", request->body);
 
 	alicloud_synth_channel_t *synth_channel = channel->method_obj;
 	const mpf_codec_descriptor_t *descriptor = mrcp_engine_source_stream_codec_get(channel);
 
-	if(!descriptor) {
-		apt_log(SYNTH_LOG_MARK,APT_PRIO_WARNING,"Failed to Get Codec Descriptor " APT_SIDRES_FMT, MRCP_MESSAGE_SIDRES(request));
+	if (!descriptor)
+	{
+		apt_log(SYNTH_LOG_MARK, APT_PRIO_WARNING, "Failed to Get Codec Descriptor " APT_SIDRES_FMT, MRCP_MESSAGE_SIDRES(request));
 		response->start_line.status_code = MRCP_STATUS_CODE_METHOD_FAILED;
 		return FALSE;
 	}
 
 	synth_channel->time_to_complete = 0;
-	if(channel->engine) {
-		char *file_name = apr_psprintf(channel->pool,"alicloud-%dkHz.pcm",descriptor->sampling_rate/1000);
-		file_path = apt_datadir_filepath_get(channel->engine->dir_layout,file_name,channel->pool);
+	if (channel->engine)
+	{
+		char *file_name = apr_psprintf(channel->pool, "alicloud-%dkHz.pcm", descriptor->sampling_rate / 1000);
+		file_path = apt_datadir_filepath_get(channel->engine->dir_layout, file_name, channel->pool);
 	}
-	if(file_path) {
-		synth_channel->audio_file = fopen(file_path,"rb");
-		if(synth_channel->audio_file) {
-			apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"Set [%s] as Speech Source " APT_SIDRES_FMT,
-				file_path,
-				MRCP_MESSAGE_SIDRES(request));
+	if (file_path)
+	{
+		synth_channel->audio_file = fopen(file_path, "rb");
+		if (synth_channel->audio_file)
+		{
+			apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "Set [%s] as Speech Source " APT_SIDRES_FMT,
+					file_path,
+					MRCP_MESSAGE_SIDRES(request));
 		}
-		else {
-			apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"No Speech Source [%s] Found " APT_SIDRES_FMT,
-				file_path,
-				MRCP_MESSAGE_SIDRES(request));
+		else
+		{
+			apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "No Speech Source [%s] Found " APT_SIDRES_FMT,
+					file_path,
+					MRCP_MESSAGE_SIDRES(request));
 			/* calculate estimated time to complete */
-			if(mrcp_generic_header_property_check(request,GENERIC_HEADER_CONTENT_LENGTH) == TRUE) {
+			if (mrcp_generic_header_property_check(request, GENERIC_HEADER_CONTENT_LENGTH) == TRUE)
+			{
 				mrcp_generic_header_t *generic_header = mrcp_generic_header_get(request);
-				if(generic_header) {
+				if (generic_header)
+				{
 					synth_channel->time_to_complete = generic_header->content_length * 10; /* 10 msec per character */
 				}
 			}
@@ -326,7 +341,7 @@ static apt_bool_t alicloud_synth_channel_speak(mrcp_engine_channel_t *channel, m
 
 	response->start_line.request_state = MRCP_REQUEST_STATE_INPROGRESS;
 	/* send asynchronous response */
-	mrcp_engine_channel_message_send(channel,response);
+	mrcp_engine_channel_message_send(channel, response);
 	synth_channel->speak_request = request;
 	return TRUE;
 }
@@ -334,7 +349,7 @@ static apt_bool_t alicloud_synth_channel_speak(mrcp_engine_channel_t *channel, m
 /** Process STOP request */
 static apt_bool_t alicloud_synth_channel_stop(mrcp_engine_channel_t *channel, mrcp_message_t *request, mrcp_message_t *response)
 {
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth channel stop.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth channel stop.");
 	alicloud_synth_channel_t *synth_channel = channel->method_obj;
 	/* store the request, make sure there is no more activity and only then send the response */
 	synth_channel->stop_response = response;
@@ -344,22 +359,22 @@ static apt_bool_t alicloud_synth_channel_stop(mrcp_engine_channel_t *channel, mr
 /** Process PAUSE request */
 static apt_bool_t alicloud_synth_channel_pause(mrcp_engine_channel_t *channel, mrcp_message_t *request, mrcp_message_t *response)
 {
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth channel pause.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth channel pause.");
 	alicloud_synth_channel_t *synth_channel = channel->method_obj;
 	synth_channel->paused = TRUE;
 	/* send asynchronous response */
-	mrcp_engine_channel_message_send(channel,response);
+	mrcp_engine_channel_message_send(channel, response);
 	return TRUE;
 }
 
 /** Process RESUME request */
 static apt_bool_t alicloud_synth_channel_resume(mrcp_engine_channel_t *channel, mrcp_message_t *request, mrcp_message_t *response)
 {
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth channel resume.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth channel resume.");
 	alicloud_synth_channel_t *synth_channel = channel->method_obj;
 	synth_channel->paused = FALSE;
 	/* send asynchronous response */
-	mrcp_engine_channel_message_send(channel,response);
+	mrcp_engine_channel_message_send(channel, response);
 	return TRUE;
 }
 
@@ -368,24 +383,27 @@ static apt_bool_t alicloud_synth_channel_set_params(mrcp_engine_channel_t *chann
 {
 	mrcp_synth_header_t *req_synth_header;
 
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth channel set params.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth channel set params.");
 	/* get synthesizer header */
 	req_synth_header = mrcp_resource_header_get(request);
-	if(req_synth_header) {
+	if (req_synth_header)
+	{
 		/* check voice age header */
-		if(mrcp_resource_header_property_check(request,SYNTHESIZER_HEADER_VOICE_AGE) == TRUE) {
-			apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"Set Voice Age [%"APR_SIZE_T_FMT"]",
-				req_synth_header->voice_param.age);
+		if (mrcp_resource_header_property_check(request, SYNTHESIZER_HEADER_VOICE_AGE) == TRUE)
+		{
+			apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "Set Voice Age [%" APR_SIZE_T_FMT "]",
+					req_synth_header->voice_param.age);
 		}
 		/* check voice name header */
-		if(mrcp_resource_header_property_check(request,SYNTHESIZER_HEADER_VOICE_NAME) == TRUE) {
-			apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"Set Voice Name [%s]",
-				req_synth_header->voice_param.name.buf);
+		if (mrcp_resource_header_property_check(request, SYNTHESIZER_HEADER_VOICE_NAME) == TRUE)
+		{
+			apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "Set Voice Name [%s]",
+					req_synth_header->voice_param.name.buf);
 		}
 	}
-	
+
 	/* send asynchronous response */
-	mrcp_engine_channel_message_send(channel,response);
+	mrcp_engine_channel_message_send(channel, response);
 	return TRUE;
 }
 
@@ -394,26 +412,29 @@ static apt_bool_t alicloud_synth_channel_get_params(mrcp_engine_channel_t *chann
 {
 	mrcp_synth_header_t *req_synth_header;
 
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth channel get params.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth channel get params.");
 
 	/* get synthesizer header */
 	req_synth_header = mrcp_resource_header_get(request);
-	if(req_synth_header) {
+	if (req_synth_header)
+	{
 		mrcp_synth_header_t *res_synth_header = mrcp_resource_header_prepare(response);
 		/* check voice age header */
-		if(mrcp_resource_header_property_check(request,SYNTHESIZER_HEADER_VOICE_AGE) == TRUE) {
+		if (mrcp_resource_header_property_check(request, SYNTHESIZER_HEADER_VOICE_AGE) == TRUE)
+		{
 			res_synth_header->voice_param.age = 25;
-			mrcp_resource_header_property_add(response,SYNTHESIZER_HEADER_VOICE_AGE);
+			mrcp_resource_header_property_add(response, SYNTHESIZER_HEADER_VOICE_AGE);
 		}
 		/* check voice name header */
-		if(mrcp_resource_header_property_check(request,SYNTHESIZER_HEADER_VOICE_NAME) == TRUE) {
-			apt_string_set(&res_synth_header->voice_param.name,"David");
-			mrcp_resource_header_property_add(response,SYNTHESIZER_HEADER_VOICE_NAME);
+		if (mrcp_resource_header_property_check(request, SYNTHESIZER_HEADER_VOICE_NAME) == TRUE)
+		{
+			apt_string_set(&res_synth_header->voice_param.name, "David");
+			mrcp_resource_header_property_add(response, SYNTHESIZER_HEADER_VOICE_NAME);
 		}
 	}
 
 	/* send asynchronous response */
-	mrcp_engine_channel_message_send(channel,response);
+	mrcp_engine_channel_message_send(channel, response);
 	return TRUE;
 }
 
@@ -422,41 +443,43 @@ static apt_bool_t alicloud_synth_channel_request_dispatch(mrcp_engine_channel_t 
 {
 	apt_bool_t processed = FALSE;
 
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth channel request dispatch.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth channel request dispatch.");
 
-	mrcp_message_t *response = mrcp_response_create(request,request->pool);
-	switch(request->start_line.method_id) {
-		case SYNTHESIZER_SET_PARAMS:
-			processed = alicloud_synth_channel_set_params(channel,request,response);
-			break;
-		case SYNTHESIZER_GET_PARAMS:
-			processed = alicloud_synth_channel_get_params(channel,request,response);
-			break;
-		case SYNTHESIZER_SPEAK:
-			processed = alicloud_synth_channel_speak(channel,request,response);
-			break;
-		case SYNTHESIZER_STOP:
-			processed = alicloud_synth_channel_stop(channel,request,response);
-			break;
-		case SYNTHESIZER_PAUSE:
-			processed = alicloud_synth_channel_pause(channel,request,response);
-			break;
-		case SYNTHESIZER_RESUME:
-			processed = alicloud_synth_channel_resume(channel,request,response);
-			break;
-		case SYNTHESIZER_BARGE_IN_OCCURRED:
-			processed = alicloud_synth_channel_stop(channel,request,response);
-			break;
-		case SYNTHESIZER_CONTROL:
-			break;
-		case SYNTHESIZER_DEFINE_LEXICON:
-			break;
-		default:
-			break;
+	mrcp_message_t *response = mrcp_response_create(request, request->pool);
+	switch (request->start_line.method_id)
+	{
+	case SYNTHESIZER_SET_PARAMS:
+		processed = alicloud_synth_channel_set_params(channel, request, response);
+		break;
+	case SYNTHESIZER_GET_PARAMS:
+		processed = alicloud_synth_channel_get_params(channel, request, response);
+		break;
+	case SYNTHESIZER_SPEAK:
+		processed = alicloud_synth_channel_speak(channel, request, response);
+		break;
+	case SYNTHESIZER_STOP:
+		processed = alicloud_synth_channel_stop(channel, request, response);
+		break;
+	case SYNTHESIZER_PAUSE:
+		processed = alicloud_synth_channel_pause(channel, request, response);
+		break;
+	case SYNTHESIZER_RESUME:
+		processed = alicloud_synth_channel_resume(channel, request, response);
+		break;
+	case SYNTHESIZER_BARGE_IN_OCCURRED:
+		processed = alicloud_synth_channel_stop(channel, request, response);
+		break;
+	case SYNTHESIZER_CONTROL:
+		break;
+	case SYNTHESIZER_DEFINE_LEXICON:
+		break;
+	default:
+		break;
 	}
-	if(processed == FALSE) {
+	if (processed == FALSE)
+	{
 		/* send asynchronous response for not handled request */
-		mrcp_engine_channel_message_send(channel,response);
+		mrcp_engine_channel_message_send(channel, response);
 	}
 	return TRUE;
 }
@@ -464,21 +487,21 @@ static apt_bool_t alicloud_synth_channel_request_dispatch(mrcp_engine_channel_t 
 /** Callback is called from MPF engine context to destroy any additional data associated with audio stream */
 static apt_bool_t alicloud_synth_stream_destroy(mpf_audio_stream_t *stream)
 {
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth stream destroy.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth stream destroy.");
 	return TRUE;
 }
 
 /** Callback is called from MPF engine context to perform any action before open */
 static apt_bool_t alicloud_synth_stream_open(mpf_audio_stream_t *stream, mpf_codec_t *codec)
 {
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth stream open ...");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth stream open ...");
 	return TRUE;
 }
 
 /** Callback is called from MPF engine context to perform any action after close */
 static apt_bool_t alicloud_synth_stream_close(mpf_audio_stream_t *stream)
 {
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth stream close.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth stream close.");
 	return TRUE;
 }
 
@@ -487,16 +510,18 @@ static apt_bool_t alicloud_synth_stream_read(mpf_audio_stream_t *stream, mpf_fra
 {
 	alicloud_synth_channel_t *synth_channel = stream->obj;
 
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth stream destroy.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth stream destroy.");
 
 	/* check if STOP was requested */
-	if(synth_channel->stop_response) {
+	if (synth_channel->stop_response)
+	{
 		/* send asynchronous response to STOP request */
-		mrcp_engine_channel_message_send(synth_channel->channel,synth_channel->stop_response);
+		mrcp_engine_channel_message_send(synth_channel->channel, synth_channel->stop_response);
 		synth_channel->stop_response = NULL;
 		synth_channel->speak_request = NULL;
 		synth_channel->paused = FALSE;
-		if(synth_channel->audio_file) {
+		if (synth_channel->audio_file)
+		{
 			fclose(synth_channel->audio_file);
 			synth_channel->audio_file = NULL;
 		}
@@ -504,55 +529,66 @@ static apt_bool_t alicloud_synth_stream_read(mpf_audio_stream_t *stream, mpf_fra
 	}
 
 	/* check if there is active SPEAK request and it isn't in paused state */
-	if(synth_channel->speak_request && synth_channel->paused == FALSE) {
+	if (synth_channel->speak_request && synth_channel->paused == FALSE)
+	{
 		/* normal processing */
 		apt_bool_t completed = FALSE;
-		if(synth_channel->audio_file) {
+		if (synth_channel->audio_file)
+		{
 			/* read speech from file */
 			apr_size_t size = frame->codec_frame.size;
-			if(fread(frame->codec_frame.buffer,1,size,synth_channel->audio_file) == size) {
+			if (fread(frame->codec_frame.buffer, 1, size, synth_channel->audio_file) == size)
+			{
 				frame->type |= MEDIA_FRAME_TYPE_AUDIO;
 			}
-			else {
+			else
+			{
 				completed = TRUE;
 			}
 		}
-		else {
+		else
+		{
 			/* fill with silence in case no file available */
-			if(synth_channel->time_to_complete >= CODEC_FRAME_TIME_BASE) {
-				memset(frame->codec_frame.buffer,0,frame->codec_frame.size);
+			if (synth_channel->time_to_complete >= CODEC_FRAME_TIME_BASE)
+			{
+				memset(frame->codec_frame.buffer, 0, frame->codec_frame.size);
 				frame->type |= MEDIA_FRAME_TYPE_AUDIO;
 				synth_channel->time_to_complete -= CODEC_FRAME_TIME_BASE;
 			}
-			else {
+			else
+			{
 				completed = TRUE;
 			}
 		}
-		
-		if(completed) {
+
+		if (completed)
+		{
 			/* raise SPEAK-COMPLETE event */
 			mrcp_message_t *message = mrcp_event_create(
-								synth_channel->speak_request,
-								SYNTHESIZER_SPEAK_COMPLETE,
-								synth_channel->speak_request->pool);
-			if(message) {
+				synth_channel->speak_request,
+				SYNTHESIZER_SPEAK_COMPLETE,
+				synth_channel->speak_request->pool);
+			if (message)
+			{
 				/* get/allocate synthesizer header */
 				mrcp_synth_header_t *synth_header = mrcp_resource_header_prepare(message);
-				if(synth_header) {
+				if (synth_header)
+				{
 					/* set completion cause */
 					synth_header->completion_cause = SYNTHESIZER_COMPLETION_CAUSE_NORMAL;
-					mrcp_resource_header_property_add(message,SYNTHESIZER_HEADER_COMPLETION_CAUSE);
+					mrcp_resource_header_property_add(message, SYNTHESIZER_HEADER_COMPLETION_CAUSE);
 				}
 				/* set request state */
 				message->start_line.request_state = MRCP_REQUEST_STATE_COMPLETE;
 
 				synth_channel->speak_request = NULL;
-				if(synth_channel->audio_file) {
+				if (synth_channel->audio_file)
+				{
 					fclose(synth_channel->audio_file);
 					synth_channel->audio_file = NULL;
 				}
 				/* send asynch event */
-				mrcp_engine_channel_message_send(synth_channel->channel,message);
+				mrcp_engine_channel_message_send(synth_channel->channel, message);
 			}
 		}
 	}
@@ -563,44 +599,46 @@ static apt_bool_t alicloud_synth_msg_signal(alicloud_synth_msg_type_e type, mrcp
 {
 	apt_bool_t status = FALSE;
 
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth msg signal .");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth msg signal .");
 
 	alicloud_synth_channel_t *alicloud_channel = channel->method_obj;
 	alicloud_synth_engine_t *alicloud_engine = alicloud_channel->alicloud_engine;
 	apt_task_t *task = apt_consumer_task_base_get(alicloud_engine->task);
 	apt_task_msg_t *msg = apt_task_msg_get(task);
-	if(msg) {
+	if (msg)
+	{
 		alicloud_synth_msg_t *alicloud_msg;
 		msg->type = TASK_MSG_USER;
-		alicloud_msg = (alicloud_synth_msg_t*) msg->data;
+		alicloud_msg = (alicloud_synth_msg_t *)msg->data;
 
 		alicloud_msg->type = type;
 		alicloud_msg->channel = channel;
 		alicloud_msg->request = request;
-		status = apt_task_msg_signal(task,msg);
+		status = apt_task_msg_signal(task, msg);
 	}
 	return status;
 }
 
 static apt_bool_t alicloud_synth_msg_process(apt_task_t *task, apt_task_msg_t *msg)
 {
-        apt_log(SYNTH_LOG_MARK,APT_PRIO_INFO,"# Alicloud synth msg process.");
+	apt_log(SYNTH_LOG_MARK, APT_PRIO_INFO, "# Alicloud synth msg process.");
 
-	alicloud_synth_msg_t *alicloud_msg = (alicloud_synth_msg_t*)msg->data;
-	switch(alicloud_msg->type) {
-		case ALICLOUD_SYNTH_MSG_OPEN_CHANNEL:
-			/* open channel and send asynch response */
-			mrcp_engine_channel_open_respond(alicloud_msg->channel,TRUE);
-			break;
-		case ALICLOUD_SYNTH_MSG_CLOSE_CHANNEL:
-			/* close channel, make sure there is no activity and send asynch response */
-			mrcp_engine_channel_close_respond(alicloud_msg->channel);
-			break;
-		case ALICLOUD_SYNTH_MSG_REQUEST_PROCESS:
-			alicloud_synth_channel_request_dispatch(alicloud_msg->channel,alicloud_msg->request);
-			break;
-		default:
-			break;
+	alicloud_synth_msg_t *alicloud_msg = (alicloud_synth_msg_t *)msg->data;
+	switch (alicloud_msg->type)
+	{
+	case ALICLOUD_SYNTH_MSG_OPEN_CHANNEL:
+		/* open channel and send asynch response */
+		mrcp_engine_channel_open_respond(alicloud_msg->channel, TRUE);
+		break;
+	case ALICLOUD_SYNTH_MSG_CLOSE_CHANNEL:
+		/* close channel, make sure there is no activity and send asynch response */
+		mrcp_engine_channel_close_respond(alicloud_msg->channel);
+		break;
+	case ALICLOUD_SYNTH_MSG_REQUEST_PROCESS:
+		alicloud_synth_channel_request_dispatch(alicloud_msg->channel, alicloud_msg->request);
+		break;
+	default:
+		break;
 	}
 	return TRUE;
 }

@@ -3,7 +3,7 @@ project (alicloudrecog)
 
 # Set source files
 set (ALICLOUD_RECOG_SOURCES
-	src/alicloud_recog_engine.c
+	src/alicloud_recog_engine.cpp
 )
 source_group ("src" FILES ${ALICLOUD_RECOG_SOURCES})
 
