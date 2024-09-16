@@ -2,12 +2,20 @@ MAINTAINERCLEANFILES   = Makefile.in
 
 SUBDIRS                =
 
-if DEMOSYNTH_PLUGIN
-SUBDIRS               += demo-synth
+if ALICLOUDSYNTH_PLUGIN
+SUBDIRS               += alicloud-synth
 endif
 
-if DEMORECOG_PLUGIN
-SUBDIRS               += demo-recog
+if ALICLOUDRECOG_PLUGIN
+SUBDIRS               += alicloud-recog
+endif
+
+if XFYUNSYNTH_PLUGIN
+SUBDIRS               += xfyun-synth
+endif
+
+if XFYUNRECOG_PLUGIN
+SUBDIRS               += xfyun-recog
 endif
 
 if DEMOVERIFIER_PLUGIN
